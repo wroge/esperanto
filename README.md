@@ -2,8 +2,6 @@
 
 [![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white)](https://pkg.go.dev/github.com/wroge/esperanto)
 [![Go Report Card](https://goreportcard.com/badge/github.com/wroge/esperanto)](https://goreportcard.com/report/github.com/wroge/esperanto)
-![golangci-lint](https://github.com/wroge/esperanto/workflows/golangci-lint/badge.svg)
-[![codecov](https://codecov.io/gh/wroge/esperanto/branch/main/graph/badge.svg?token=SBSedMOGHR)](https://codecov.io/gh/wroge/esperanto)
 [![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/wroge/esperanto.svg?style=social)](https://github.com/wroge/esperanto/tags)
 
 esperanto makes it easy to create SQL expressions for multiple dialects. If your project requires only one dialect, I recommend [wroge/superbasic](https://github.com/wroge/superbasic).
