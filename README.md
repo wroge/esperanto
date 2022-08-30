@@ -45,9 +45,9 @@ func main() {
 
 	fmt.Println(esperanto.Sqlite.Finalize(create))
 	// CREATE TABLE presidents (
-	// 	   nr INTEGER PRIMARY KEY AUTOINCREMENT,
-	// 	   first TEXT NOT NULL,
-	// 	   last TEXT NOT NULL
+	// 	nr INTEGER PRIMARY KEY AUTOINCREMENT,
+	//  	first TEXT NOT NULL,
+	// 	last TEXT NOT NULL
 	// )
 
 	fmt.Println(esperanto.SQLServer.Finalize(create))
