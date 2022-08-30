@@ -38,23 +38,23 @@ func main() {
 
 	fmt.Println(esperanto.Postgres.Finalize(create))
 	// CREATE TABLE presidents (
-	//	  nr SERIAL PRIMARY KEY,
-	//	  first TEXT NOT NULL,
-	//	  last TEXT NOT NULL
+	//	nr SERIAL PRIMARY KEY,
+	//	first TEXT NOT NULL,
+	//	last TEXT NOT NULL
 	// )
 
 	fmt.Println(esperanto.Sqlite.Finalize(create))
 	// CREATE TABLE presidents (
-	//	  nr INTEGER PRIMARY KEY AUTOINCREMENT,
-	//	  first TEXT NOT NULL,
-	//	  last TEXT NOT NULL
+	//	nr INTEGER PRIMARY KEY AUTOINCREMENT,
+	//	first TEXT NOT NULL,
+	//	last TEXT NOT NULL
 	// )
 
 	fmt.Println(esperanto.SQLServer.Finalize(create))
 	// CREATE TABLE presidents (
-	//	  nr INT IDENTITY PRIMARY KEY,
-	//	  first TEXT NOT NULL,
-	//	  last TEXT NOT NULL
+	//	nr INT IDENTITY PRIMARY KEY,
+	//	first TEXT NOT NULL,
+	//	last TEXT NOT NULL
 	// )
 
 	// 2. INSERT
