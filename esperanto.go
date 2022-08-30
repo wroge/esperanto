@@ -5,6 +5,44 @@ import (
 	"strings"
 )
 
+//nolint:nonamedreturns
+func ToSQL(dialect Dialect, expression any) (sql string, args []any, err error) {
+	switch expr := expression.(type) {
+	case interface {
+		ToSQL(dialect Dialect) (string, []any, error)
+	}:
+		sql, args, err = expr.ToSQL(dialect)
+	case interface {
+		ToSQL() (string, []any, error)
+	}:
+		sql, args, err = expr.ToSQL()
+	case interface {
+		ToSql() (string, []any, error)
+	}:
+		sql, args, err = expr.ToSql()
+	case interface {
+		ToSQL(dialect Dialect) (string, error)
+	}:
+		sql, err = expr.ToSQL(dialect)
+	case interface {
+		ToSQL() (string, error)
+	}:
+		sql, err = expr.ToSQL()
+	case interface {
+		ToSql() (string, error)
+	}:
+		sql, err = expr.ToSql()
+	default:
+		return "", nil, Error{Err: ExpressionError{}}
+	}
+
+	if err != nil {
+		return "", nil, Error{Err: err}
+	}
+
+	return sql, args, nil
+}
+
 type Error struct {
 	Err error
 }
@@ -34,16 +72,10 @@ func (e Error) Scan(dest ...any) error {
 	return e
 }
 
-type ExpressionError struct {
-	Location string
-}
+type ExpressionError struct{}
 
 func (e ExpressionError) Error() string {
-	if e.Location != "" {
-		return fmt.Sprintf("expression is nil at '%s', ", e.Location)
-	}
-
-	return "expression is nil"
+	return "expression is invalid: Take a look at esperanto.ToSQL"
 }
 
 // NumberOfArgumentsError is returned if arguments doesn't match the number of placeholders.
@@ -69,73 +101,52 @@ func (e NumberOfArgumentsError) Error() string {
 		e.Placeholders, placeholder, e.Arguments, argument, e.SQL)
 }
 
-type DialectError struct {
-	Dialect  Dialect
-	Location string
-}
-
-func (e DialectError) Error() string {
-	dialect := "nil"
-
-	if e.Dialect != nil {
-		dialect = e.Dialect.String()
-	}
-
-	if e.Location != "" {
-		return fmt.Sprintf("dialect '%s' not allowed at '%s'", dialect, e.Location)
-	}
-
-	return fmt.Sprintf("dialect '%s' not allowed", dialect)
-}
-
-type Dialect interface {
-	fmt.Stringer
+type Placeholder interface {
 	Placeholder(position int) string
-	Question() string
 }
 
-type knownDialect string
+type StaticPlaceholder string
+
+func (s StaticPlaceholder) Placeholder(position int) string {
+	return string(s)
+}
+
+type PositionalPlaceholder string
+
+func (p PositionalPlaceholder) Placeholder(position int) string {
+	return fmt.Sprintf(string(p), position)
+}
 
 const (
-	MySQL     knownDialect = "mysql"
-	Sqlite    knownDialect = "sqlite"
-	Postgres  knownDialect = "postgres"
-	Oracle    knownDialect = "oracle"
-	SQLServer knownDialect = "sqlserver"
+	Question StaticPlaceholder     = "?"
+	Dollar   PositionalPlaceholder = "$%d"
+	Colon    PositionalPlaceholder = ":%d"
+	AtP      PositionalPlaceholder = "@p%d"
 )
 
-func (d knownDialect) String() string {
-	return string(d)
-}
+type Dialect string
 
-func (d knownDialect) Placeholder(position int) string {
+const (
+	MySQL     Dialect = "mysql"
+	Sqlite    Dialect = "sqlite"
+	Postgres  Dialect = "postgres"
+	Oracle    Dialect = "oracle"
+	SQLServer Dialect = "sqlserver"
+)
+
+func (d Dialect) Finalize(expression any) (string, []any, error) {
 	switch d {
 	case MySQL, Sqlite:
-		return "?"
+		return Finalize(Question, d, expression)
 	case Postgres:
-		return fmt.Sprintf("$%d", position)
+		return Finalize(Dollar, d, expression)
 	case Oracle:
-		return fmt.Sprintf(":%d", position)
+		return Finalize(Colon, d, expression)
 	case SQLServer:
-		return fmt.Sprintf("@p%d", position)
+		return Finalize(AtP, d, expression)
+	default:
+		return Finalize(Question, d, expression)
 	}
-
-	panic("unknown known dialect")
-}
-
-func (d knownDialect) Question() string {
-	switch d {
-	case MySQL, Sqlite:
-		return "??"
-	case Postgres, Oracle, SQLServer:
-		return "?"
-	}
-
-	panic("unknown known dialect")
-}
-
-type Expression interface {
-	ToSQL(dialect Dialect) (string, []any, error)
 }
 
 func Map[From any, To any](from []From, mapper func(From) To) []To {
@@ -148,23 +159,19 @@ func Map[From any, To any](from []From, mapper func(From) To) []To {
 	return toSlice
 }
 
-func Value(a any) Raw {
-	return Raw{SQL: "?", Args: []any{a}}
-}
-
 type Values []any
 
 func (v Values) ToSQL(dialect Dialect) (string, []any, error) {
 	return fmt.Sprintf("(%s)", strings.Repeat(", ?", len(v))[2:]), v, nil
 }
 
-func Compile(template string, expressions ...Expression) Compiler {
+func Compile(template string, expressions ...any) Compiler {
 	return Compiler{Template: template, Expressions: expressions}
 }
 
 type Compiler struct {
 	Template    string
-	Expressions []Expression
+	Expressions []any
 }
 
 func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
@@ -201,13 +208,13 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 		}
 
 		if c.Expressions[exprIndex] == nil {
-			return "", nil, Error{Err: ExpressionError{Location: "esperanto.Compiler"}}
+			return "", nil, Error{Err: ExpressionError{}}
 		}
 
 		builder.WriteString(c.Template[:index])
 		c.Template = c.Template[index+1:]
 
-		sql, args, err := c.Expressions[exprIndex].ToSQL(dialect)
+		sql, args, err := ToSQL(dialect, c.Expressions[exprIndex])
 		if err != nil {
 			return "", nil, Error{Err: err}
 		}
@@ -230,7 +237,7 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 	return builder.String(), arguments, nil
 }
 
-func If(condition bool, then Expression) Condition {
+func If(condition bool, then any) Condition {
 	return Condition{
 		If:   condition,
 		Then: then,
@@ -238,7 +245,7 @@ func If(condition bool, then Expression) Condition {
 	}
 }
 
-func IfElse(condition bool, then Expression, els Expression) Condition {
+func IfElse(condition bool, then any, els any) Condition {
 	return Condition{
 		If:   condition,
 		Then: then,
@@ -248,8 +255,8 @@ func IfElse(condition bool, then Expression, els Expression) Condition {
 
 type Condition struct {
 	If   bool
-	Then Expression
-	Else Expression
+	Then any
+	Else any
 }
 
 func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
@@ -258,7 +265,7 @@ func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
 			return "", nil, nil
 		}
 
-		sql, args, err := c.Then.ToSQL(dialect)
+		sql, args, err := ToSQL(dialect, c.Then)
 		if err != nil {
 			return "", nil, Error{Err: err}
 		}
@@ -270,7 +277,7 @@ func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
 		return "", nil, nil
 	}
 
-	sql, args, err := c.Else.ToSQL(dialect)
+	sql, args, err := ToSQL(dialect, c.Else)
 	if err != nil {
 		return "", nil, Error{Err: err}
 	}
@@ -278,17 +285,13 @@ func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
 	return sql, args, nil
 }
 
-func Append(expressions ...Expression) Joiner {
-	return Joiner{Sep: "", Expressions: expressions}
-}
-
-func Join(sep string, expressions ...Expression) Joiner {
+func Join(sep string, expressions ...any) Joiner {
 	return Joiner{Sep: sep, Expressions: expressions}
 }
 
 type Joiner struct {
 	Sep         string
-	Expressions []Expression
+	Expressions []any
 }
 
 func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
@@ -300,7 +303,7 @@ func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
 			continue
 		}
 
-		sql, args, err := expression.ToSQL(dialect)
+		sql, args, err := ToSQL(dialect, expression)
 		if err != nil {
 			return "", nil, Error{Err: err}
 		}
@@ -321,26 +324,15 @@ func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
 	return builder.String(), arguments, nil
 }
 
-type Func func(Dialect) Expression
-
-func (f Func) ToSQL(dialect Dialect) (string, []any, error) {
-	sql, args, err := f(dialect).ToSQL(dialect)
-	if err != nil {
-		return "", nil, Error{Err: err}
-	}
-
-	return sql, args, nil
-}
-
-type Switch map[Dialect]Expression
+type Switch map[Dialect]any
 
 func (s Switch) ToSQL(dialect Dialect) (string, []any, error) {
 	if s == nil {
-		return "", nil, Error{Err: DialectError{Dialect: dialect, Location: "esperanto.Switch"}}
+		return "", nil, nil
 	}
 
 	if expr, ok := s[dialect]; ok {
-		sql, args, err := expr.ToSQL(dialect)
+		sql, args, err := ToSQL(dialect, expr)
 		if err != nil {
 			return "", nil, Error{Err: err}
 		}
@@ -348,11 +340,7 @@ func (s Switch) ToSQL(dialect Dialect) (string, []any, error) {
 		return sql, args, nil
 	}
 
-	return "", nil, Error{Err: DialectError{Dialect: dialect, Location: "esperanto.Switch"}}
-}
-
-func Skip() Raw {
-	return Raw{SQL: "", Args: nil}
+	return "", nil, nil
 }
 
 func SQL(sql string, args ...any) Raw {
@@ -364,37 +352,43 @@ type Raw struct {
 	Args []any
 }
 
-func (r Raw) ToSQL(dialect Dialect) (string, []any, error) {
+func (r Raw) ToSQL() (string, []any, error) {
 	return r.SQL, r.Args, nil
 }
 
-func Finalize(dialect Dialect, expression Expression) (string, []any, error) {
-	if expression == nil {
-		return "", nil, Error{Err: ExpressionError{Location: "esperanto.Finalize"}}
-	}
-
-	sql, args, err := expression.ToSQL(dialect)
+func Finalize(placeholder Placeholder, dialect Dialect, expression any) (string, []any, error) {
+	sql, args, err := ToSQL(dialect, expression)
 	if err != nil {
 		return "", nil, Error{Err: err}
 	}
 
 	var count int
 
-	sql, count, err = replace(dialect, sql)
+	sql, count, err = Replace(placeholder, sql)
 	if err != nil {
-		return "", nil, err
+		return "", nil, Error{Err: err}
 	}
 
 	if count != len(args) {
-		return "", nil, NumberOfArgumentsError{SQL: sql, Placeholders: count, Arguments: len(args)}
+		return "", nil, Error{Err: NumberOfArgumentsError{SQL: sql, Placeholders: count, Arguments: len(args)}}
 	}
 
 	return sql, args, nil
 }
 
-func replace(dialect Dialect, sql string) (string, int, error) {
+func Replace(placeholder Placeholder, sql string) (string, int, error) {
 	build := &strings.Builder{}
 	count := 0
+
+	if placeholder == nil {
+		placeholder = Question
+	}
+
+	question := "?"
+
+	if placeholder.Placeholder(1) == "?" {
+		question = "??"
+	}
 
 	for {
 		index := strings.IndexRune(sql, '?')
@@ -405,7 +399,7 @@ func replace(dialect Dialect, sql string) (string, int, error) {
 		}
 
 		if index < len(sql)-1 && sql[index+1] == '?' {
-			build.WriteString(sql[:index] + dialect.Question())
+			build.WriteString(sql[:index] + question)
 			sql = sql[index+2:]
 
 			continue
@@ -413,7 +407,7 @@ func replace(dialect Dialect, sql string) (string, int, error) {
 
 		count++
 
-		build.WriteString(fmt.Sprintf("%s%s", sql[:index], dialect.Placeholder(count)))
+		build.WriteString(fmt.Sprintf("%s%s", sql[:index], placeholder.Placeholder(count)))
 		sql = sql[index+1:]
 	}
 
