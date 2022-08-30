@@ -2,6 +2,7 @@
 
 [![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white)](https://pkg.go.dev/github.com/wroge/esperanto)
 [![Go Report Card](https://goreportcard.com/badge/github.com/wroge/esperanto)](https://goreportcard.com/report/github.com/wroge/esperanto)
+![golangci-lint](https://github.com/wroge/esperanto/workflows/golangci-lint/badge.svg)
 [![codecov](https://codecov.io/gh/wroge/esperanto/branch/main/graph/badge.svg?token=D2r0ktepvb)](https://codecov.io/gh/wroge/esperanto)
 [![tippin.me](https://badgen.net/badge/%E2%9A%A1%EF%B8%8Ftippin.me/@_wroge/F0918E)](https://tippin.me/@_wroge)
 [![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/wroge/esperanto.svg?style=social)](https://github.com/wroge/esperanto/tags)
