@@ -3,7 +3,6 @@ package esperanto_test
 import (
 	"testing"
 
-	"github.com/Masterminds/squirrel"
 	"github.com/wroge/esperanto"
 )
 
@@ -125,7 +124,7 @@ func TestQuery(t *testing.T) {
 
 	equals := esperanto.Switch{
 		esperanto.Postgres:  esperanto.SQL("last = ?", "Adams"),
-		esperanto.Sqlite:    squirrel.Eq{"last": "Adams"},
+		esperanto.Sqlite:    esperanto.SQL("last = ?", "Adams"),
 		esperanto.SQLServer: esperanto.SQL("CONVERT(VARCHAR, last) = ? COLLATE Latin1_General_CS_AS", "Adams"),
 	}
 
