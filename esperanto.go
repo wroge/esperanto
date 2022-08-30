@@ -20,18 +20,6 @@ func ToSQL(dialect Dialect, expression any) (sql string, args []any, err error) 
 		ToSql() (string, []any, error)
 	}:
 		sql, args, err = expr.ToSql()
-	case interface {
-		ToSQL(dialect Dialect) (string, error)
-	}:
-		sql, err = expr.ToSQL(dialect)
-	case interface {
-		ToSQL() (string, error)
-	}:
-		sql, err = expr.ToSQL()
-	case interface {
-		ToSql() (string, error)
-	}:
-		sql, err = expr.ToSql()
 	default:
 		return "", nil, Error{Err: ExpressionError{}}
 	}
