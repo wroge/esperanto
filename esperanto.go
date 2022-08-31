@@ -52,7 +52,7 @@ func (e Error) Unwrap() error {
 	return e.Err
 }
 
-func (e Error) ToSQL(dialect Dialect) (string, []any, error) {
+func (e Error) ToSQL() (string, []any, error) {
 	return "", nil, e
 }
 
@@ -149,7 +149,7 @@ func Map[From any, To any](from []From, mapper func(From) To) []To {
 
 type Values []any
 
-func (v Values) ToSQL(dialect Dialect) (string, []any, error) {
+func (v Values) ToSQL() (string, []any, error) {
 	return fmt.Sprintf("(%s)", strings.Repeat(", ?", len(v))[2:]), v, nil
 }
 
