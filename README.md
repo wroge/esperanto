@@ -9,7 +9,7 @@
 
 esperanto makes it easy to create SQL expressions for multiple dialects. 
 
-```esperanto.Compile``` compiles expressions into an SQL template and thus offers an alternative to conventional query builders. ```Masterminds/squirrel``` expressions and [others](https://github.com/wroge/esperanto/blob/main/esperanto.go#L9) are supported.
+```esperanto.Compile``` compiles expressions into an SQL template and thus offers an alternative to conventional query builders. ```Masterminds/squirrel.Sqlizer``` expressions and [others](https://github.com/wroge/esperanto/blob/main/esperanto.go#L9) are supported.
 
 ```go
 package main
@@ -93,7 +93,9 @@ func main() {
 	// INSERT INTO presidents (first, last) OUTPUT INSERTED.nr VALUES (@p1, @p2), (@p3, @p4) [George Washington John Adams]
 
 	// 3. QUERY
-	// This section creates a query that returns JSON rows and is therefore supported by any database driver.
+	// In this section, we create a query that returns JSON rows so that they can be scanned in a 
+	// similar way (byte-slice) for every dialect and driver.
+	// For convenience squirrel expressions can be used.
 	// Note that the JSON_OBJECT function is not yet implemented in SQL Server 2019.
 
 	equals := esperanto.Switch{
