@@ -5,32 +5,6 @@ import (
 	"strings"
 )
 
-//nolint:nonamedreturns
-func ToSQL(dialect Dialect, expression any) (sql string, args []any, err error) {
-	switch expr := expression.(type) {
-	case interface {
-		ToSQL(dialect Dialect) (string, []any, error)
-	}:
-		sql, args, err = expr.ToSQL(dialect)
-	case interface {
-		ToSQL() (string, []any, error)
-	}:
-		sql, args, err = expr.ToSQL()
-	case interface {
-		ToSql() (string, []any, error)
-	}:
-		sql, args, err = expr.ToSql()
-	default:
-		return "", nil, Error{Err: ExpressionError{}}
-	}
-
-	if err != nil {
-		return "", nil, Error{Err: err}
-	}
-
-	return sql, args, nil
-}
-
 type Error struct {
 	Err error
 }
@@ -52,7 +26,7 @@ func (e Error) Unwrap() error {
 	return e.Err
 }
 
-func (e Error) ToSQL() (string, []any, error) {
+func (e Error) ToSQL(dialect Dialect) (string, []any, error) {
 	return "", nil, e
 }
 
@@ -122,7 +96,7 @@ const (
 	SQLServer Dialect = "sqlserver"
 )
 
-func (d Dialect) Finalize(expression any) (string, []any, error) {
+func (d Dialect) Finalize(expression Expression) (string, []any, error) {
 	switch d {
 	case MySQL, Sqlite:
 		return Finalize(Question, d, expression)
@@ -137,6 +111,10 @@ func (d Dialect) Finalize(expression any) (string, []any, error) {
 	}
 }
 
+type Expression interface {
+	ToSQL(dialect Dialect) (string, []any, error)
+}
+
 func Map[From any, To any](from []From, mapper func(From) To) []To {
 	toSlice := make([]To, len(from))
 
@@ -149,17 +127,17 @@ func Map[From any, To any](from []From, mapper func(From) To) []To {
 
 type Values []any
 
-func (v Values) ToSQL() (string, []any, error) {
+func (v Values) ToSQL(dialect Dialect) (string, []any, error) {
 	return fmt.Sprintf("(%s)", strings.Repeat(", ?", len(v))[2:]), v, nil
 }
 
-func Compile(template string, expressions ...any) Compiler {
+func Compile(template string, expressions ...Expression) Compiler {
 	return Compiler{Template: template, Expressions: expressions}
 }
 
 type Compiler struct {
 	Template    string
-	Expressions []any
+	Expressions []Expression
 }
 
 func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
@@ -202,7 +180,7 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 		builder.WriteString(c.Template[:index])
 		c.Template = c.Template[index+1:]
 
-		sql, args, err := ToSQL(dialect, c.Expressions[exprIndex])
+		sql, args, err := c.Expressions[exprIndex].ToSQL(dialect)
 		if err != nil {
 			return "", nil, Error{Err: err}
 		}
@@ -225,7 +203,7 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 	return builder.String(), arguments, nil
 }
 
-func If(condition bool, then any) Condition {
+func If(condition bool, then Expression) Condition {
 	return Condition{
 		If:   condition,
 		Then: then,
@@ -233,7 +211,7 @@ func If(condition bool, then any) Condition {
 	}
 }
 
-func IfElse(condition bool, then any, els any) Condition {
+func IfElse(condition bool, then Expression, els Expression) Condition {
 	return Condition{
 		If:   condition,
 		Then: then,
@@ -243,8 +221,8 @@ func IfElse(condition bool, then any, els any) Condition {
 
 type Condition struct {
 	If   bool
-	Then any
-	Else any
+	Then Expression
+	Else Expression
 }
 
 func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
@@ -253,7 +231,7 @@ func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
 			return "", nil, nil
 		}
 
-		sql, args, err := ToSQL(dialect, c.Then)
+		sql, args, err := c.Then.ToSQL(dialect)
 		if err != nil {
 			return "", nil, Error{Err: err}
 		}
@@ -265,7 +243,7 @@ func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
 		return "", nil, nil
 	}
 
-	sql, args, err := ToSQL(dialect, c.Else)
+	sql, args, err := c.Else.ToSQL(dialect)
 	if err != nil {
 		return "", nil, Error{Err: err}
 	}
@@ -273,13 +251,13 @@ func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
 	return sql, args, nil
 }
 
-func Join(sep string, expressions ...any) Joiner {
+func Join(sep string, expressions ...Expression) Joiner {
 	return Joiner{Sep: sep, Expressions: expressions}
 }
 
 type Joiner struct {
 	Sep         string
-	Expressions []any
+	Expressions []Expression
 }
 
 func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
@@ -291,7 +269,7 @@ func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
 			continue
 		}
 
-		sql, args, err := ToSQL(dialect, expression)
+		sql, args, err := expression.ToSQL(dialect)
 		if err != nil {
 			return "", nil, Error{Err: err}
 		}
@@ -312,7 +290,7 @@ func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
 	return builder.String(), arguments, nil
 }
 
-type Switch map[Dialect]any
+type Switch map[Dialect]Expression
 
 func (s Switch) ToSQL(dialect Dialect) (string, []any, error) {
 	if s == nil {
@@ -320,7 +298,7 @@ func (s Switch) ToSQL(dialect Dialect) (string, []any, error) {
 	}
 
 	if expr, ok := s[dialect]; ok {
-		sql, args, err := ToSQL(dialect, expr)
+		sql, args, err := expr.ToSQL(dialect)
 		if err != nil {
 			return "", nil, Error{Err: err}
 		}
@@ -340,12 +318,12 @@ type Raw struct {
 	Args []any
 }
 
-func (r Raw) ToSQL() (string, []any, error) {
+func (r Raw) ToSQL(dialect Dialect) (string, []any, error) {
 	return r.SQL, r.Args, nil
 }
 
-func Finalize(placeholder Placeholder, dialect Dialect, expression any) (string, []any, error) {
-	sql, args, err := ToSQL(dialect, expression)
+func Finalize(placeholder Placeholder, dialect Dialect, expression Expression) (string, []any, error) {
+	sql, args, err := expression.ToSQL(dialect)
 	if err != nil {
 		return "", nil, Error{Err: err}
 	}
