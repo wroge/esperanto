@@ -21,7 +21,7 @@ func TestCreate(t *testing.T) {
 		),
 	)
 
-	sql, _, err := esperanto.Postgres.Finalize(create)
+	sql, _, err := esperanto.Finalize("$%d", esperanto.Postgres, create)
 	if err != nil {
 		t.Error(err)
 	}
@@ -34,7 +34,7 @@ func TestCreate(t *testing.T) {
 		t.Fatal(sql)
 	}
 
-	sql, _, err = esperanto.Sqlite.Finalize(create)
+	sql, _, err = esperanto.Finalize("?", esperanto.Sqlite, create)
 	if err != nil {
 		t.Error(err)
 	}
@@ -47,7 +47,7 @@ func TestCreate(t *testing.T) {
 		t.Fatal(sql)
 	}
 
-	sql, _, err = esperanto.SQLServer.Finalize(create)
+	sql, _, err = esperanto.Finalize("@p%d", esperanto.SQLServer, create)
 	if err != nil {
 		t.Error(err)
 	}
@@ -86,7 +86,7 @@ func TestInsert(t *testing.T) {
 		},
 	)
 
-	sql, _, err := esperanto.Postgres.Finalize(insert)
+	sql, _, err := esperanto.Finalize("$%d", esperanto.Postgres, insert)
 	if err != nil {
 		t.Error(err)
 	}
@@ -95,7 +95,7 @@ func TestInsert(t *testing.T) {
 		t.Fatal(sql)
 	}
 
-	sql, _, err = esperanto.Sqlite.Finalize(insert)
+	sql, _, err = esperanto.Finalize("?", esperanto.Sqlite, insert)
 	if err != nil {
 		t.Error(err)
 	}
@@ -104,7 +104,7 @@ func TestInsert(t *testing.T) {
 		t.Fatal(sql)
 	}
 
-	sql, _, err = esperanto.SQLServer.Finalize(insert)
+	sql, _, err = esperanto.Finalize("@p%d", esperanto.SQLServer, insert)
 	if err != nil {
 		t.Error(err)
 	}
@@ -141,7 +141,7 @@ func TestQuery(t *testing.T) {
 		),
 	)
 
-	sql, args, err := esperanto.Postgres.Finalize(query)
+	sql, args, err := esperanto.Finalize("$%d", esperanto.Postgres, query)
 	if err != nil {
 		t.Error(err)
 	}
@@ -151,7 +151,7 @@ func TestQuery(t *testing.T) {
 		t.Fatal(sql)
 	}
 
-	sql, args, err = esperanto.Sqlite.Finalize(query)
+	sql, args, err = esperanto.Finalize("?", esperanto.Sqlite, query)
 	if err != nil {
 		t.Error(err)
 	}
@@ -161,7 +161,7 @@ func TestQuery(t *testing.T) {
 		t.Fatal(sql)
 	}
 
-	sql, args, err = esperanto.SQLServer.Finalize(query)
+	sql, args, err = esperanto.Finalize("@p%d", esperanto.SQLServer, query)
 	if err != nil {
 		t.Error(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// Error wraps any error in this package and can be used to create an Expression.
 type Error struct {
 	Err error
 }
@@ -30,14 +31,13 @@ func (e Error) ToSQL(dialect Dialect) (string, []any, error) {
 	return "", nil, e
 }
 
-func (e Error) Scan(dest ...any) error {
-	return e
+// ExpressionError is returned by the Compile Expression, if an expression is nil.
+type ExpressionError struct {
+	Position int
 }
 
-type ExpressionError struct{}
-
 func (e ExpressionError) Error() string {
-	return "expression is invalid: Take a look at esperanto.ToSQL"
+	return fmt.Sprintf("expression at position '%d' is nil", e.Position)
 }
 
 // NumberOfArgumentsError is returned if arguments doesn't match the number of placeholders.
@@ -63,29 +63,7 @@ func (e NumberOfArgumentsError) Error() string {
 		e.Placeholders, placeholder, e.Arguments, argument, e.SQL)
 }
 
-type Placeholder interface {
-	Placeholder(position int) string
-}
-
-type StaticPlaceholder string
-
-func (s StaticPlaceholder) Placeholder(position int) string {
-	return string(s)
-}
-
-type PositionalPlaceholder string
-
-func (p PositionalPlaceholder) Placeholder(position int) string {
-	return fmt.Sprintf(string(p), position)
-}
-
-const (
-	Question StaticPlaceholder     = "?"
-	Dollar   PositionalPlaceholder = "$%d"
-	Colon    PositionalPlaceholder = ":%d"
-	AtP      PositionalPlaceholder = "@p%d"
-)
-
+// Dialect can be any string to distinguish between different syntaxes of databases.
 type Dialect string
 
 const (
@@ -96,25 +74,12 @@ const (
 	SQLServer Dialect = "sqlserver"
 )
 
-func (d Dialect) Finalize(expression Expression) (string, []any, error) {
-	switch d {
-	case MySQL, Sqlite:
-		return Finalize(Question, d, expression)
-	case Postgres:
-		return Finalize(Dollar, d, expression)
-	case Oracle:
-		return Finalize(Colon, d, expression)
-	case SQLServer:
-		return Finalize(AtP, d, expression)
-	default:
-		return Finalize(Question, d, expression)
-	}
-}
-
 type Expression interface {
 	ToSQL(dialect Dialect) (string, []any, error)
 }
 
+// Map is a generic function for mapping one slice to another slice.
+// It is useful for creating a slice of expressions as input to the join function.
 func Map[From any, To any](from []From, mapper func(From) To) []To {
 	toSlice := make([]To, len(from))
 
@@ -135,6 +100,9 @@ func Compile(template string, expressions ...Expression) Compiler {
 	return Compiler{Template: template, Expressions: expressions}
 }
 
+// Compiler takes a template and compiles a list of expressions into that template.
+// The number of placeholders in the template must be exactly equal to the number of expressions.
+// If an expression is nil, an ExpressionError is returned.
 type Compiler struct {
 	Template    string
 	Expressions []Expression
@@ -174,7 +142,7 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 		}
 
 		if c.Expressions[exprIndex] == nil {
-			return "", nil, Error{Err: ExpressionError{}}
+			return "", nil, Error{Err: ExpressionError{Position: exprIndex}}
 		}
 
 		builder.WriteString(c.Template[:index])
@@ -219,6 +187,7 @@ func IfElse(condition bool, then Expression, els Expression) Condition {
 	}
 }
 
+// Condition is a boolean switch between two expressions. If an expression is nil, it is skipped.
 type Condition struct {
 	If   bool
 	Then Expression
@@ -290,6 +259,7 @@ func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
 	return builder.String(), arguments, nil
 }
 
+// Switch can be used to distinguish between dialects. If a dialect is not found, it is skipped.
 type Switch map[Dialect]Expression
 
 func (s Switch) ToSQL(dialect Dialect) (string, []any, error) {
@@ -322,7 +292,9 @@ func (r Raw) ToSQL(dialect Dialect) (string, []any, error) {
 	return r.SQL, r.Args, nil
 }
 
-func Finalize(placeholder Placeholder, dialect Dialect, expression Expression) (string, []any, error) {
+// Finalize takes a static placeholder like '?' or a positional placeholder containing '%d'.
+// Escaped placeholders ('??') are replaced to '?' when placeholder argument is not '?'.
+func Finalize(placeholder string, dialect Dialect, expression Expression) (string, []any, error) {
 	sql, args, err := expression.ToSQL(dialect)
 	if err != nil {
 		return "", nil, Error{Err: err}
@@ -342,18 +314,21 @@ func Finalize(placeholder Placeholder, dialect Dialect, expression Expression) (
 	return sql, args, nil
 }
 
-func Replace(placeholder Placeholder, sql string) (string, int, error) {
+// Replace takes a static placeholder like '?' or a positional placeholder containing '%d'.
+// Escaped placeholders ('??') are replaced to '?' when placeholder argument is not '?'.
+func Replace(placeholder string, sql string) (string, int, error) {
 	build := &strings.Builder{}
 	count := 0
 
-	if placeholder == nil {
-		placeholder = Question
+	question := "?"
+	positional := false
+
+	if placeholder == "?" {
+		question = "??"
 	}
 
-	question := "?"
-
-	if placeholder.Placeholder(1) == "?" {
-		question = "??"
+	if strings.Contains(placeholder, "%d") {
+		positional = true
 	}
 
 	for {
@@ -373,7 +348,14 @@ func Replace(placeholder Placeholder, sql string) (string, int, error) {
 
 		count++
 
-		build.WriteString(fmt.Sprintf("%s%s", sql[:index], placeholder.Placeholder(count)))
+		build.WriteString(sql[:index])
+
+		if positional {
+			build.WriteString(fmt.Sprintf(placeholder, count))
+		} else {
+			build.WriteString(placeholder)
+		}
+
 		sql = sql[index+1:]
 	}
 

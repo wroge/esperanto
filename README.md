@@ -37,21 +37,21 @@ func main() {
 		),
 	)
 
-	fmt.Println(esperanto.Postgres.Finalize(create))
+	fmt.Println(esperanto.Finalize("$%d", esperanto.Postgres, create))
 	// CREATE TABLE presidents (
 	//	nr SERIAL PRIMARY KEY,
 	//	first TEXT NOT NULL,
 	//	last TEXT NOT NULL
 	// )
 
-	fmt.Println(esperanto.Sqlite.Finalize(create))
+	fmt.Println(esperanto.Finalize("?", esperanto.Sqlite, create))
 	// CREATE TABLE presidents (
 	//	nr INTEGER PRIMARY KEY AUTOINCREMENT,
 	//	first TEXT NOT NULL,
 	//	last TEXT NOT NULL
 	// )
 
-	fmt.Println(esperanto.SQLServer.Finalize(create))
+	fmt.Println(esperanto.Finalize("@p%d", esperanto.SQLServer, create))
 	// CREATE TABLE presidents (
 	//	nr INT IDENTITY PRIMARY KEY,
 	//	first TEXT NOT NULL,
@@ -82,13 +82,13 @@ func main() {
 		},
 	)
 
-	fmt.Println(esperanto.Postgres.Finalize(insert))
+	fmt.Println(esperanto.Finalize("$%d", esperanto.Postgres, insert))
 	// INSERT INTO presidents (first, last) VALUES ($1, $2), ($3, $4) RETURNING nr [George Washington John Adams]
 
-	fmt.Println(esperanto.Sqlite.Finalize(insert))
+	fmt.Println(esperanto.Finalize("?", esperanto.Sqlite, insert))
 	// INSERT INTO presidents (first, last) VALUES (?, ?), (?, ?) RETURNING nr [George Washington John Adams]
 
-	fmt.Println(esperanto.SQLServer.Finalize(insert))
+	fmt.Println(esperanto.Finalize("@p%d", esperanto.SQLServer, insert))
 	// INSERT INTO presidents (first, last) OUTPUT INSERTED.nr VALUES (@p1, @p2), (@p3, @p4) [George Washington John Adams]
 
 	// 3. QUERY
@@ -115,15 +115,15 @@ func main() {
 		),
 	)
 
-	fmt.Println(esperanto.Postgres.Finalize(query))
+	fmt.Println(esperanto.Finalize("$%d", esperanto.Postgres, query))
 	// SELECT JSON_BUILD_OBJECT('nr', q.nr, 'first', q.first, 'last', q.last) AS result
 	// FROM (SELECT nr, first, last FROM presidents WHERE last = $1) AS q [Adams]
 
-	fmt.Println(esperanto.Sqlite.Finalize(query))
+	fmt.Println(esperanto.Finalize("?", esperanto.Sqlite, query))
 	// SELECT JSON_OBJECT('nr', q.nr, 'first', q.first, 'last', q.last) AS result
 	// FROM (SELECT nr, first, last FROM presidents WHERE last = ?) AS q [Adams]
 
-	fmt.Println(esperanto.SQLServer.Finalize(query))
+	fmt.Println(esperanto.Finalize("@p%d", esperanto.SQLServer, query))
 	// SELECT JSON_OBJECT('nr': q.nr, 'first': q.first, 'last': q.last) AS result
 	// FROM (SELECT nr, first, last FROM presidents
 	// WHERE CONVERT(VARCHAR, last) = @p1 COLLATE Latin1_General_CS_AS) AS q [Adams]
