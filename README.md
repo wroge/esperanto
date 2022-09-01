@@ -37,21 +37,21 @@ func main() {
 		),
 	)
 
-	fmt.Println(esperanto.Finalize("$%d", esperanto.Postgres, create))
+	fmt.Println(create.ToSQL(esperanto.Postgres))
 	// CREATE TABLE presidents (
 	//	nr SERIAL PRIMARY KEY,
 	//	first TEXT NOT NULL,
 	//	last TEXT NOT NULL
 	// )
 
-	fmt.Println(esperanto.Finalize("?", esperanto.Sqlite, create))
+	fmt.Println(create.ToSQL(esperanto.Sqlite))
 	// CREATE TABLE presidents (
 	//	nr INTEGER PRIMARY KEY AUTOINCREMENT,
 	//	first TEXT NOT NULL,
 	//	last TEXT NOT NULL
 	// )
 
-	fmt.Println(esperanto.Finalize("@p%d", esperanto.SQLServer, create))
+	fmt.Println(create.ToSQL(esperanto.SQLServer))
 	// CREATE TABLE presidents (
 	//	nr INT IDENTITY PRIMARY KEY,
 	//	first TEXT NOT NULL,
