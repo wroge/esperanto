@@ -11,6 +11,8 @@ esperanto makes it easy to create SQL expressions for multiple dialects.
 
 ```esperanto.Compile``` compiles expressions into an SQL template and thus offers an alternative to conventional query builders.
 
+If you only need support for one SQL dialect, take a look at [wroge/superbasic](https://github.com/wroge/superbasic).
+
 ```go
 package main
 
@@ -18,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/wroge/esperanto"
+	"github.com/wroge/superbasic"
 )
 
 func main() {
@@ -28,9 +31,9 @@ func main() {
 	create := esperanto.Compile("CREATE TABLE presidents (\n\t?\n)",
 		esperanto.Join(",\n\t",
 			esperanto.Switch{
-				esperanto.Postgres:  esperanto.SQL("nr SERIAL PRIMARY KEY"),
-				esperanto.Sqlite:    esperanto.SQL("nr INTEGER PRIMARY KEY AUTOINCREMENT"),
-				esperanto.SQLServer: esperanto.SQL("nr INT IDENTITY PRIMARY KEY"),
+				esperanto.Postgres:  superbasic.SQL("nr SERIAL PRIMARY KEY"),
+				esperanto.Sqlite:    superbasic.SQL("nr INTEGER PRIMARY KEY AUTOINCREMENT"),
+				esperanto.SQLServer: superbasic.SQL("nr INT IDENTITY PRIMARY KEY"),
 			},
 			esperanto.SQL("first TEXT NOT NULL"),
 			esperanto.SQL("last TEXT NOT NULL"),
@@ -66,7 +69,7 @@ func main() {
 	insert := esperanto.Join(" ",
 		esperanto.SQL("INSERT INTO presidents (first, last)"),
 		esperanto.Switch{
-			esperanto.SQLServer: esperanto.SQL("OUTPUT INSERTED.nr"),
+			esperanto.SQLServer: superbasic.SQL("OUTPUT INSERTED.nr"),
 		},
 		esperanto.Compile("VALUES ?",
 			esperanto.Join(", ",
@@ -77,8 +80,8 @@ func main() {
 			),
 		),
 		esperanto.Switch{
-			esperanto.Postgres: esperanto.SQL("RETURNING nr"),
-			esperanto.Sqlite:   esperanto.SQL("RETURNING nr"),
+			esperanto.Postgres: superbasic.SQL("RETURNING nr"),
+			esperanto.Sqlite:   superbasic.SQL("RETURNING nr"),
 		},
 	)
 
@@ -97,17 +100,17 @@ func main() {
 	// Note that the JSON_OBJECT function is not yet implemented in SQL Server 2019.
 
 	equals := esperanto.Switch{
-		esperanto.Postgres:  esperanto.SQL("last = ?", "Adams"),
-		esperanto.Sqlite:    esperanto.SQL("last = ?", "Adams"),
-		esperanto.SQLServer: esperanto.SQL("CONVERT(VARCHAR, last) = ? COLLATE Latin1_General_CS_AS", "Adams"),
+		esperanto.Postgres:  superbasic.SQL("last = ?", "Adams"),
+		esperanto.Sqlite:    superbasic.SQL("last = ?", "Adams"),
+		esperanto.SQLServer: superbasic.SQL("CONVERT(VARCHAR, last) = ? COLLATE Latin1_General_CS_AS", "Adams"),
 	}
 
 	query := esperanto.Compile("SELECT ? FROM (?) AS q",
 		esperanto.Switch{
-			esperanto.Postgres: esperanto.SQL("JSON_BUILD_OBJECT('nr', q.nr, 'first', q.first, 'last', q.last) AS result"),
-			esperanto.Sqlite:   esperanto.SQL("JSON_OBJECT('nr', q.nr, 'first', q.first, 'last', q.last) AS result"),
+			esperanto.Postgres: superbasic.SQL("JSON_BUILD_OBJECT('nr', q.nr, 'first', q.first, 'last', q.last) AS result"),
+			esperanto.Sqlite:   superbasic.SQL("JSON_OBJECT('nr', q.nr, 'first', q.first, 'last', q.last) AS result"),
 			// https://docs.microsoft.com/en-us/sql/t-sql/functions/json-object-transact-sql
-			esperanto.SQLServer: esperanto.SQL("JSON_OBJECT('nr': q.nr, 'first': q.first, 'last': q.last) AS result"),
+			esperanto.SQLServer: superbasic.SQL("JSON_OBJECT('nr': q.nr, 'first': q.first, 'last': q.last) AS result"),
 		},
 		esperanto.Join(" ",
 			esperanto.SQL("SELECT nr, first, last FROM presidents"),

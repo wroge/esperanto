@@ -3,6 +3,8 @@ package esperanto
 import (
 	"fmt"
 	"strings"
+
+	"github.com/wroge/superbasic"
 )
 
 // Error wraps any error in this package and can be used to create an Expression.
@@ -29,38 +31,6 @@ func (e Error) Unwrap() error {
 
 func (e Error) ToSQL(dialect Dialect) (string, []any, error) {
 	return "", nil, e
-}
-
-// ExpressionError is returned by the Compile Expression, if an expression is nil.
-type ExpressionError struct {
-	Position int
-}
-
-func (e ExpressionError) Error() string {
-	return fmt.Sprintf("expression at position '%d' is nil", e.Position)
-}
-
-// NumberOfArgumentsError is returned if arguments doesn't match the number of placeholders.
-type NumberOfArgumentsError struct {
-	SQL                     string
-	Placeholders, Arguments int
-}
-
-func (e NumberOfArgumentsError) Error() string {
-	argument := "argument"
-
-	if e.Arguments > 1 {
-		argument += "s"
-	}
-
-	placeholder := "placeholder"
-
-	if e.Placeholders > 1 {
-		placeholder += "s"
-	}
-
-	return fmt.Sprintf("%d %s and %d %s in '%s'",
-		e.Placeholders, placeholder, e.Arguments, argument, e.SQL)
 }
 
 // Dialect can be any string to distinguish between different syntaxes of databases.
@@ -133,7 +103,7 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 
 		if exprIndex >= len(c.Expressions) {
 			return "", nil, Error{
-				Err: NumberOfArgumentsError{
+				Err: superbasic.NumberOfArgumentsError{
 					SQL:          builder.String(),
 					Placeholders: exprIndex,
 					Arguments:    len(c.Expressions),
@@ -142,7 +112,7 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 		}
 
 		if c.Expressions[exprIndex] == nil {
-			return "", nil, Error{Err: ExpressionError{Position: exprIndex}}
+			return "", nil, Error{Err: superbasic.ExpressionError{Position: exprIndex}}
 		}
 
 		builder.WriteString(c.Template[:index])
@@ -160,7 +130,7 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 
 	if exprIndex != len(c.Expressions)-1 {
 		return "", nil, Error{
-			Err: NumberOfArgumentsError{
+			Err: superbasic.NumberOfArgumentsError{
 				SQL:          builder.String(),
 				Placeholders: exprIndex,
 				Arguments:    len(c.Expressions),
@@ -260,7 +230,7 @@ func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
 }
 
 // Switch can be used to distinguish between dialects. If a dialect is not found, it is skipped.
-type Switch map[Dialect]Expression
+type Switch map[Dialect]superbasic.Expression
 
 func (s Switch) ToSQL(dialect Dialect) (string, []any, error) {
 	if s == nil {
@@ -268,7 +238,7 @@ func (s Switch) ToSQL(dialect Dialect) (string, []any, error) {
 	}
 
 	if expr, ok := s[dialect]; ok {
-		sql, args, err := expr.ToSQL(dialect)
+		sql, args, err := expr.ToSQL()
 		if err != nil {
 			return "", nil, Error{Err: err}
 		}
@@ -302,62 +272,11 @@ func Finalize(placeholder string, dialect Dialect, expression Expression) (strin
 
 	var count int
 
-	sql, count, err = Replace(placeholder, sql)
-	if err != nil {
-		return "", nil, Error{Err: err}
-	}
+	sql, count = superbasic.Replace(placeholder, sql)
 
 	if count != len(args) {
-		return "", nil, Error{Err: NumberOfArgumentsError{SQL: sql, Placeholders: count, Arguments: len(args)}}
+		return "", nil, Error{Err: superbasic.NumberOfArgumentsError{SQL: sql, Placeholders: count, Arguments: len(args)}}
 	}
 
 	return sql, args, nil
-}
-
-// Replace takes a static placeholder like '?' or a positional placeholder containing '%d'.
-// Escaped placeholders ('??') are replaced to '?' when placeholder argument is not '?'.
-func Replace(placeholder string, sql string) (string, int, error) {
-	build := &strings.Builder{}
-	count := 0
-
-	question := "?"
-	positional := false
-
-	if placeholder == "?" {
-		question = "??"
-	}
-
-	if strings.Contains(placeholder, "%d") {
-		positional = true
-	}
-
-	for {
-		index := strings.IndexRune(sql, '?')
-		if index < 0 {
-			build.WriteString(sql)
-
-			break
-		}
-
-		if index < len(sql)-1 && sql[index+1] == '?' {
-			build.WriteString(sql[:index] + question)
-			sql = sql[index+2:]
-
-			continue
-		}
-
-		count++
-
-		build.WriteString(sql[:index])
-
-		if positional {
-			build.WriteString(fmt.Sprintf(placeholder, count))
-		} else {
-			build.WriteString(placeholder)
-		}
-
-		sql = sql[index+1:]
-	}
-
-	return build.String(), count, nil
 }
