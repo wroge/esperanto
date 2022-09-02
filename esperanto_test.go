@@ -72,7 +72,7 @@ func TestInsert(t *testing.T) {
 		},
 		esperanto.Compile("VALUES ?",
 			esperanto.Join(", ",
-				esperanto.Map([]President{
+				superbasic.Map([]President{
 					{"George", "Washington"},
 					{"John", "Adams"},
 				},

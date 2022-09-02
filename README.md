@@ -73,7 +73,7 @@ func main() {
 		},
 		esperanto.Compile("VALUES ?",
 			esperanto.Join(", ",
-				esperanto.Map(presidents,
+				superbasic.Map(presidents,
 					func(president President) esperanto.Expression {
 						return esperanto.Values{president.First, president.Last}
 					})...,
