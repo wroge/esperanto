@@ -11,7 +11,7 @@ esperanto makes it easy to create SQL expressions for multiple dialects.
 
 ```esperanto.Compile``` compiles expressions into an SQL template and thus offers an alternative to conventional query builders.
 
-If you only need support for one SQL dialect, take a look at [wroge/superbasic](https://github.com/wroge/superbasic).
+If you only need support for one SQL dialect, take a look at [wroge/superbasic](https://github.com/wroge/superbasic). To scan rows to types, i recommend [wroge/scan](https://github.com/wroge/scan).
 
 ```go
 package main
