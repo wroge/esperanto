@@ -95,8 +95,7 @@ func main() {
 	// INSERT INTO presidents (first, last) OUTPUT INSERTED.nr VALUES (@p1, @p2), (@p3, @p4) [George Washington John Adams]
 
 	// 3. QUERY
-	// In this section, we create a query that returns JSON rows so that they can be scanned in a
-	// similar way (byte-slice) for every dialect and driver.
+	// In this section, we create a query that returns JSON rows.
 	// Note that the JSON_OBJECT function is not yet implemented in SQL Server 2019.
 
 	equals := esperanto.Switch{
