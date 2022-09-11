@@ -7,32 +7,6 @@ import (
 	"github.com/wroge/superbasic"
 )
 
-// Error wraps any error in this package and can be used to create an Expression.
-type Error struct {
-	Err error
-}
-
-func (e Error) Error() string {
-	if e.Err != nil {
-		//nolint:errorlint
-		if err, ok := e.Err.(Error); ok {
-			return err.Error()
-		}
-
-		return fmt.Sprintf("esperanto.Error: %s", e.Err.Error())
-	}
-
-	return "esperanto.Error"
-}
-
-func (e Error) Unwrap() error {
-	return e.Err
-}
-
-func (e Error) ToSQL(dialect Dialect) (string, []any, error) {
-	return "", nil, e
-}
-
 // Dialect can be any string to distinguish between different syntaxes of databases.
 type Dialect string
 
@@ -90,17 +64,15 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 		exprIndex++
 
 		if exprIndex >= len(c.Expressions) {
-			return "", nil, Error{
-				Err: superbasic.NumberOfArgumentsError{
-					SQL:          builder.String(),
-					Placeholders: exprIndex,
-					Arguments:    len(c.Expressions),
-				},
+			return "", nil, superbasic.NumberOfArgumentsError{
+				SQL:          builder.String(),
+				Placeholders: exprIndex,
+				Arguments:    len(c.Expressions),
 			}
 		}
 
 		if c.Expressions[exprIndex] == nil {
-			return "", nil, Error{Err: superbasic.ExpressionError{Position: exprIndex}}
+			return "", nil, superbasic.ExpressionError{Position: exprIndex}
 		}
 
 		builder.WriteString(c.Template[:index])
@@ -108,7 +80,7 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 
 		sql, args, err := c.Expressions[exprIndex].ToSQL(dialect)
 		if err != nil {
-			return "", nil, Error{Err: err}
+			return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
 		}
 
 		builder.WriteString(sql)
@@ -117,12 +89,10 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 	}
 
 	if exprIndex != len(c.Expressions)-1 {
-		return "", nil, Error{
-			Err: superbasic.NumberOfArgumentsError{
-				SQL:          builder.String(),
-				Placeholders: exprIndex,
-				Arguments:    len(c.Expressions),
-			},
+		return "", nil, superbasic.NumberOfArgumentsError{
+			SQL:          builder.String(),
+			Placeholders: exprIndex,
+			Arguments:    len(c.Expressions),
 		}
 	}
 
@@ -160,7 +130,7 @@ func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
 
 		sql, args, err := c.Then.ToSQL(dialect)
 		if err != nil {
-			return "", nil, Error{Err: err}
+			return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
 		}
 
 		return sql, args, nil
@@ -172,7 +142,7 @@ func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
 
 	sql, args, err := c.Else.ToSQL(dialect)
 	if err != nil {
-		return "", nil, Error{Err: err}
+		return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
 	}
 
 	return sql, args, nil
@@ -198,7 +168,7 @@ func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
 
 		sql, args, err := expression.ToSQL(dialect)
 		if err != nil {
-			return "", nil, Error{Err: err}
+			return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
 		}
 
 		if sql == "" {
@@ -228,7 +198,7 @@ func (s Switch) ToSQL(dialect Dialect) (string, []any, error) {
 	if expr, ok := s[dialect]; ok {
 		sql, args, err := expr.ToSQL()
 		if err != nil {
-			return "", nil, Error{Err: err}
+			return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
 		}
 
 		return sql, args, nil
@@ -255,7 +225,7 @@ func (r Raw) ToSQL(dialect Dialect) (string, []any, error) {
 func Finalize(placeholder string, dialect Dialect, expression Expression) (string, []any, error) {
 	sql, args, err := expression.ToSQL(dialect)
 	if err != nil {
-		return "", nil, Error{Err: err}
+		return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
 	}
 
 	var count int
@@ -263,7 +233,7 @@ func Finalize(placeholder string, dialect Dialect, expression Expression) (strin
 	sql, count = superbasic.Replace(placeholder, sql)
 
 	if count != len(args) {
-		return "", nil, Error{Err: superbasic.NumberOfArgumentsError{SQL: sql, Placeholders: count, Arguments: len(args)}}
+		return "", nil, superbasic.NumberOfArgumentsError{SQL: sql, Placeholders: count, Arguments: len(args)}
 	}
 
 	return sql, args, nil
