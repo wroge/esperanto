@@ -1,3 +1,4 @@
+//nolint:wrapcheck
 package esperanto
 
 import (
@@ -80,7 +81,7 @@ func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
 
 		sql, args, err := c.Expressions[exprIndex].ToSQL(dialect)
 		if err != nil {
-			return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
+			return "", nil, err
 		}
 
 		builder.WriteString(sql)
@@ -130,7 +131,7 @@ func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
 
 		sql, args, err := c.Then.ToSQL(dialect)
 		if err != nil {
-			return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
+			return "", nil, err
 		}
 
 		return sql, args, nil
@@ -142,7 +143,7 @@ func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
 
 	sql, args, err := c.Else.ToSQL(dialect)
 	if err != nil {
-		return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
+		return "", nil, err
 	}
 
 	return sql, args, nil
@@ -168,7 +169,7 @@ func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
 
 		sql, args, err := expression.ToSQL(dialect)
 		if err != nil {
-			return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
+			return "", nil, err
 		}
 
 		if sql == "" {
@@ -198,7 +199,7 @@ func (s Switch) ToSQL(dialect Dialect) (string, []any, error) {
 	if expr, ok := s[dialect]; ok {
 		sql, args, err := expr.ToSQL()
 		if err != nil {
-			return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
+			return "", nil, err
 		}
 
 		return sql, args, nil
@@ -225,7 +226,7 @@ func (r Raw) ToSQL(dialect Dialect) (string, []any, error) {
 func Finalize(placeholder string, dialect Dialect, expression Expression) (string, []any, error) {
 	sql, args, err := expression.ToSQL(dialect)
 	if err != nil {
-		return "", nil, fmt.Errorf("wroge/esperanto error: %w", err)
+		return "", nil, err
 	}
 
 	var count int
