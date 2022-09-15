@@ -125,9 +125,10 @@ func DropAuthors(dialect esperanto.Dialect) superbasic.Expression {
 func CreateAuthors(dialect esperanto.Dialect) superbasic.Expression {
 	return superbasic.Compile("CREATE TABLE IF NOT EXISTS authors (\n\t?\n)",
 		superbasic.Join(",\n\t",
-			superbasic.IfElse(dialect == esperanto.Postgres,
-				superbasic.SQL("id SERIAL PRIMARY KEY"),
-				superbasic.SQL("id INTEGER PRIMARY KEY AUTOINCREMENT")),
+			superbasic.Switch(dialect,
+				superbasic.Case(esperanto.Postgres, superbasic.SQL("id SERIAL PRIMARY KEY")),
+				superbasic.Case(esperanto.Sqlite, superbasic.SQL("id INTEGER PRIMARY KEY AUTOINCREMENT")),
+			),
 			superbasic.SQL("name TEXT NOT NULL"),
 		),
 	)
@@ -142,11 +143,11 @@ func AuthorQuery(dialect esperanto.Dialect, options QueryAuthorOptions) (superba
 	LEFT JOIN post_authors ON post_authors.author_id = authors.id
 	LEFT JOIN posts ON posts.id = post_authors.post_id
 	GROUP BY authors.id, authors.name`,
-			superbasic.IfElse(dialect == esperanto.Postgres,
-				superbasic.SQL("JSON_AGG(JSON_BUILD_OBJECT('id', posts.id, 'title', posts.title))"),
-				superbasic.SQL(`
-			CASE WHEN posts.id IS NULL THEN '[]' 
+			superbasic.Switch(dialect,
+				superbasic.Case(esperanto.Postgres, superbasic.SQL("JSON_AGG(JSON_BUILD_OBJECT('id', posts.id, 'title', posts.title))")),
+				superbasic.Case(esperanto.Sqlite, superbasic.SQL(`CASE WHEN posts.id IS NULL THEN '[]' 
 				ELSE JSON_GROUP_ARRAY(JSON_OBJECT('id', posts.id, 'title', posts.title)) END`)),
+			),
 		),
 		[]scan.Column[Author]{
 			scan.Any(func(author *Author, id int64) { author.ID = id }),
@@ -184,12 +185,12 @@ func DropPostAuthors(dialect esperanto.Dialect) superbasic.Expression {
 func CreatePosts(dialect esperanto.Dialect) superbasic.Expression {
 	return superbasic.Compile("CREATE TABLE IF NOT EXISTS posts (\n\t?\n)",
 		superbasic.Join(",\n\t",
-			superbasic.IfElse(dialect == esperanto.Postgres,
-				superbasic.SQL("id SERIAL PRIMARY KEY"),
-				superbasic.SQL("id INTEGER PRIMARY KEY AUTOINCREMENT")),
+			superbasic.Switch(dialect,
+				superbasic.Case(esperanto.Postgres, superbasic.SQL("id SERIAL PRIMARY KEY")),
+				superbasic.Case(esperanto.Sqlite, superbasic.SQL("id INTEGER PRIMARY KEY AUTOINCREMENT")),
+			),
 			superbasic.SQL("title TEXT NOT NULL"),
-		),
-	)
+		))
 }
 
 func CreatePostAuthors(dialect esperanto.Dialect) superbasic.Expression {
@@ -211,11 +212,11 @@ func PostQuery(dialect esperanto.Dialect, options QueryPostOptions) (superbasic.
 	LEFT JOIN post_authors ON post_authors.post_id = posts.id
 	LEFT JOIN authors ON authors.id = post_authors.author_id
 	GROUP BY posts.id, posts.title`,
-			superbasic.IfElse(dialect == esperanto.Postgres,
-				superbasic.SQL("JSON_AGG(JSON_BUILD_OBJECT('id', authors.id, 'name', authors.name))"),
-				superbasic.SQL(`CASE WHEN authors.id IS NULL THEN '[]' 
-				ELSE JSON_GROUP_ARRAY(JSON_OBJECT('id', authors.id, 'name', authors.name)) END`)),
-		),
+			superbasic.Switch(dialect,
+				superbasic.Case(esperanto.Postgres, superbasic.SQL("JSON_AGG(JSON_BUILD_OBJECT('id', authors.id, 'name', authors.name))")),
+				superbasic.Case(esperanto.Sqlite, superbasic.SQL(`CASE WHEN authors.id IS NULL THEN '[]' 
+		ELSE JSON_GROUP_ARRAY(JSON_OBJECT('id', authors.id, 'name', authors.name)) END`)),
+			)),
 		[]scan.Column[Post]{
 			scan.Any(func(post *Post, id int64) { post.ID = id }),
 			scan.Any(func(post *Post, title string) { post.Title = title }),
