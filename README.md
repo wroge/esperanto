@@ -11,6 +11,8 @@ esperanto is a database access layer. It is based upon ...
 - [wroge/superbasic](https://github.com/wroge/superbasic)
 - [wroge/scan](https://github.com/wroge/scan)
 
+This module can help you better organize your queries, especially if you need support for multiple dialects.
+
 ```go
 package main
 
@@ -116,8 +118,6 @@ type Author struct {
 	Posts []PostEntity
 }
 
-type QueryAuthorOptions struct{}
-
 func DropAuthors(dialect esperanto.Dialect) superbasic.Expression {
 	return superbasic.SQL("DROP TABLE IF EXISTS authors")
 }
@@ -132,6 +132,8 @@ func CreateAuthors(dialect esperanto.Dialect) superbasic.Expression {
 		),
 	)
 }
+
+type QueryAuthorOptions struct{}
 
 func AuthorQuery(dialect esperanto.Dialect, options QueryAuthorOptions) (superbasic.Expression, []scan.Column[Author]) {
 	return superbasic.Compile(`
