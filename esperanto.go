@@ -1,10 +1,12 @@
-//nolint:wrapcheck
+//nolint:ireturn,wrapcheck,varnamelen,gofumpt
 package esperanto
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
-	"strings"
 
+	"github.com/wroge/scan"
 	"github.com/wroge/superbasic"
 )
 
@@ -19,223 +21,261 @@ const (
 	SQLServer Dialect = "sqlserver"
 )
 
-type Expression interface {
-	ToSQL(dialect Dialect) (string, []any, error)
-}
+type Queryable[MODEL, OPTIONS any] func(dialect Dialect, options OPTIONS) (superbasic.Expression, []scan.Column[MODEL])
 
-type Values []any
+type QueryExecutable[MODEL, OPTIONS any] func(dialect Dialect, options OPTIONS, models []MODEL) superbasic.Expression
 
-func (v Values) ToSQL(dialect Dialect) (string, []any, error) {
-	return fmt.Sprintf("(%s)", strings.Repeat(", ?", len(v))[2:]), v, nil
-}
+type QueryOneExecutable[MODEL, OPTIONS any] func(dialect Dialect, options OPTIONS, model MODEL) superbasic.Expression
 
-func Compile(template string, expressions ...Expression) Compiler {
-	return Compiler{Template: template, Expressions: expressions}
-}
+type Executable func(dialect Dialect) superbasic.Expression
 
-// Compiler takes a template and compiles a list of expressions into that template.
-// The number of placeholders in the template must be exactly equal to the number of expressions.
-// If an expression is nil, an ExpressionError is returned.
-type Compiler struct {
-	Template    string
-	Expressions []Expression
-}
-
-func (c Compiler) ToSQL(dialect Dialect) (string, []any, error) {
-	builder := &strings.Builder{}
-	arguments := make([]any, 0, len(c.Expressions))
-
-	exprIndex := -1
-
-	for {
-		index := strings.IndexRune(c.Template, '?')
-		if index < 0 {
-			builder.WriteString(c.Template)
-
-			break
-		}
-
-		if index < len(c.Template)-1 && c.Template[index+1] == '?' {
-			builder.WriteString(c.Template[:index+2])
-			c.Template = c.Template[index+2:]
-
-			continue
-		}
-
-		exprIndex++
-
-		if exprIndex >= len(c.Expressions) {
-			return "", nil, superbasic.NumberOfArgumentsError{
-				SQL:          builder.String(),
-				Placeholders: exprIndex,
-				Arguments:    len(c.Expressions),
-			}
-		}
-
-		if c.Expressions[exprIndex] == nil {
-			return "", nil, superbasic.ExpressionError{Position: exprIndex}
-		}
-
-		builder.WriteString(c.Template[:index])
-		c.Template = c.Template[index+1:]
-
-		sql, args, err := c.Expressions[exprIndex].ToSQL(dialect)
-		if err != nil {
-			return "", nil, err
-		}
-
-		builder.WriteString(sql)
-
-		arguments = append(arguments, args...)
-	}
-
-	if exprIndex != len(c.Expressions)-1 {
-		return "", nil, superbasic.NumberOfArgumentsError{
-			SQL:          builder.String(),
-			Placeholders: exprIndex,
-			Arguments:    len(c.Expressions),
-		}
-	}
-
-	return builder.String(), arguments, nil
-}
-
-func If(condition bool, then Expression) Condition {
-	return Condition{
-		If:   condition,
-		Then: then,
-		Else: nil,
-	}
-}
-
-func IfElse(condition bool, then Expression, els Expression) Condition {
-	return Condition{
-		If:   condition,
-		Then: then,
-		Else: els,
-	}
-}
-
-// Condition is a boolean switch between two expressions. If an expression is nil, it is skipped.
-type Condition struct {
-	If   bool
-	Then Expression
-	Else Expression
-}
-
-func (c Condition) ToSQL(dialect Dialect) (string, []any, error) {
-	if c.If {
-		if c.Then == nil {
-			return "", nil, nil
-		}
-
-		sql, args, err := c.Then.ToSQL(dialect)
-		if err != nil {
-			return "", nil, err
-		}
-
-		return sql, args, nil
-	}
-
-	if c.Else == nil {
-		return "", nil, nil
-	}
-
-	sql, args, err := c.Else.ToSQL(dialect)
+func Exec(ctx context.Context, db DB, dialect Dialect, executables ...Executable) error {
+	txn, err := db.Begin(ctx)
 	if err != nil {
-		return "", nil, err
+		return err
 	}
 
-	return sql, args, nil
-}
-
-func Join(sep string, expressions ...Expression) Joiner {
-	return Joiner{Sep: sep, Expressions: expressions}
-}
-
-type Joiner struct {
-	Sep         string
-	Expressions []Expression
-}
-
-func (j Joiner) ToSQL(dialect Dialect) (string, []any, error) {
-	builder := &strings.Builder{}
-	arguments := make([]any, 0, len(j.Expressions))
-
-	for index, expression := range j.Expressions {
-		if expression == nil {
-			continue
-		}
-
-		sql, args, err := expression.ToSQL(dialect)
+	for _, exec := range executables {
+		err = txn.Exec(ctx, exec(dialect))
 		if err != nil {
-			return "", nil, err
+			return txn.Rollback(ctx, err)
 		}
-
-		if sql == "" {
-			continue
-		}
-
-		if index != 0 {
-			builder.WriteString(j.Sep)
-		}
-
-		builder.WriteString(sql)
-
-		arguments = append(arguments, args...)
 	}
 
-	return builder.String(), arguments, nil
+	return txn.Commit(ctx)
 }
 
-// Switch can be used to distinguish between dialects. If a dialect is not found, it is skipped.
-type Switch map[Dialect]superbasic.Expression
+func Query[MODEL, OPTIONS any](
+	ctx context.Context,
+	db DB,
+	dialect Dialect,
+	queryable Queryable[MODEL, OPTIONS],
+	options OPTIONS) ([]MODEL, error) {
+	expression, columns := queryable(dialect, options)
 
-func (s Switch) ToSQL(dialect Dialect) (string, []any, error) {
-	if s == nil {
-		return "", nil, nil
-	}
-
-	if expr, ok := s[dialect]; ok {
-		sql, args, err := expr.ToSQL()
-		if err != nil {
-			return "", nil, err
-		}
-
-		return sql, args, nil
-	}
-
-	return "", nil, nil
-}
-
-func SQL(sql string, args ...any) Raw {
-	return Raw{SQL: sql, Args: args}
-}
-
-type Raw struct {
-	SQL  string
-	Args []any
-}
-
-func (r Raw) ToSQL(dialect Dialect) (string, []any, error) {
-	return r.SQL, r.Args, nil
-}
-
-// Finalize takes a static placeholder like '?' or a positional placeholder containing '%d'.
-// Escaped placeholders ('??') are replaced to '?' when placeholder argument is not '?'.
-func Finalize(placeholder string, dialect Dialect, expression Expression) (string, []any, error) {
-	sql, args, err := expression.ToSQL(dialect)
+	rows, err := db.Query(ctx, expression)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
-	var count int
+	return scan.All(rows, columns...)
+}
 
-	sql, count = superbasic.Replace(placeholder, sql)
+func QueryOne[MODEL, OPTIONS any](
+	ctx context.Context,
+	db DB,
+	dialect Dialect,
+	queryable Queryable[MODEL, OPTIONS],
+	options OPTIONS) (MODEL, error) {
+	expression, columns := queryable(dialect, options)
 
-	if count != len(args) {
-		return "", nil, superbasic.NumberOfArgumentsError{SQL: sql, Placeholders: count, Arguments: len(args)}
+	return scan.One(db.QueryRow(ctx, expression), columns...)
+}
+
+func QueryAndExec[MODEL, OPTIONS any](
+	ctx context.Context,
+	db DB,
+	dialect Dialect,
+	queryable Queryable[MODEL, OPTIONS],
+	options OPTIONS,
+	executables ...QueryExecutable[MODEL, OPTIONS]) ([]MODEL, error) {
+	txn, err := db.Begin(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	return sql, args, nil
+	expression, columns := queryable(dialect, options)
+
+	rows, err := txn.Query(ctx, expression)
+	if err != nil {
+		return nil, txn.Rollback(ctx, err)
+	}
+
+	models, err := scan.All(rows, columns...)
+	if err != nil {
+		return nil, txn.Rollback(ctx, err)
+	}
+
+	for _, exec := range executables {
+		err = txn.Exec(ctx, exec(dialect, options, models))
+		if err != nil {
+			return nil, txn.Rollback(ctx, err)
+		}
+	}
+
+	return models, txn.Commit(ctx)
+}
+
+func QueryAndExecOne[MODEL, OPTIONS any](
+	ctx context.Context,
+	db DB, dialect Dialect,
+	queryable Queryable[MODEL, OPTIONS],
+	options OPTIONS,
+	executables ...QueryOneExecutable[MODEL, OPTIONS]) (MODEL, error) {
+	var (
+		model MODEL
+		err   error
+	)
+
+	txn, err := db.Begin(ctx)
+	if err != nil {
+		return model, err
+	}
+
+	expression, columns := queryable(dialect, options)
+
+	row := txn.QueryRow(ctx, expression)
+
+	model, err = scan.One(row, columns...)
+	if err != nil {
+		return model, txn.Rollback(ctx, err)
+	}
+
+	for _, exec := range executables {
+		err = txn.Exec(ctx, exec(dialect, options, model))
+		if err != nil {
+			return model, txn.Rollback(ctx, err)
+		}
+	}
+
+	return model, txn.Commit(ctx)
+}
+
+type Tx interface {
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context, err error) error
+	Query(ctx context.Context, expression superbasic.Expression) (scan.Rows, error)
+	QueryRow(ctx context.Context, expression superbasic.Expression) scan.Row
+	Exec(ctx context.Context, expression superbasic.Expression) error
+}
+
+type DB interface {
+	Close() error
+	Begin(ctx context.Context) (Tx, error)
+	Query(ctx context.Context, expression superbasic.Expression) (scan.Rows, error)
+	QueryRow(ctx context.Context, expression superbasic.Expression) scan.Row
+	Exec(ctx context.Context, expression superbasic.Expression) error
+}
+
+type StdDB struct {
+	Placeholder string
+	DB          *sql.DB
+}
+
+func (s StdDB) Close() error {
+	return s.DB.Close()
+}
+
+func (s StdDB) Begin(ctx context.Context) (Tx, error) {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return StdTx{Placeholder: s.Placeholder, Tx: tx}, nil
+}
+
+func (s StdDB) Query(ctx context.Context, expression superbasic.Expression) (scan.Rows, error) {
+	sql, args, err := superbasic.Finalize(s.Placeholder, expression)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.DB.QueryContext(ctx, sql, args...)
+}
+
+func (s StdDB) QueryRow(ctx context.Context, expression superbasic.Expression) scan.Row {
+	sql, args, err := superbasic.Finalize(s.Placeholder, expression)
+	if err != nil {
+		return RowError{Err: err}
+	}
+
+	return s.DB.QueryRowContext(ctx, sql, args...)
+}
+
+func (s StdDB) Exec(ctx context.Context, expression superbasic.Expression) error {
+	sql, args, err := superbasic.Finalize(s.Placeholder, expression)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.DB.ExecContext(ctx, sql, args...)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type StdTx struct {
+	Placeholder string
+	Tx          *sql.Tx
+}
+
+func (s StdTx) Commit(ctx context.Context) error {
+	return s.Tx.Commit()
+}
+
+type RollbackError struct {
+	Err  error
+	Wrap error
+}
+
+func (re RollbackError) Error() string {
+	return fmt.Sprintf("wroge/esperanto error: %s", re.Err)
+}
+
+func (re RollbackError) Unwrap() error {
+	return re.Wrap
+}
+
+func (s StdTx) Rollback(ctx context.Context, err error) error {
+	if rollbackErr := s.Tx.Rollback(); rollbackErr != nil {
+		return RollbackError{
+			Err:  rollbackErr,
+			Wrap: err,
+		}
+	}
+
+	return err
+}
+
+func (s StdTx) Query(ctx context.Context, expression superbasic.Expression) (scan.Rows, error) {
+	sql, args, err := superbasic.Finalize(s.Placeholder, expression)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.Tx.QueryContext(ctx, sql, args...)
+}
+
+func (s StdTx) QueryRow(ctx context.Context, expression superbasic.Expression) scan.Row {
+	sql, args, err := superbasic.Finalize(s.Placeholder, expression)
+	if err != nil {
+		return RowError{Err: err}
+	}
+
+	return s.Tx.QueryRowContext(ctx, sql, args...)
+}
+
+func (s StdTx) Exec(ctx context.Context, expression superbasic.Expression) error {
+	sql, args, err := superbasic.Finalize(s.Placeholder, expression)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.Tx.ExecContext(ctx, sql, args...)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type RowError struct {
+	Err error
+}
+
+func (re RowError) Scan(dest ...any) error {
+	return re.Err
 }

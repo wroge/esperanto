@@ -3,184 +3,259 @@
 [![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white)](https://pkg.go.dev/github.com/wroge/esperanto)
 [![Go Report Card](https://goreportcard.com/badge/github.com/wroge/esperanto)](https://goreportcard.com/report/github.com/wroge/esperanto)
 ![golangci-lint](https://github.com/wroge/esperanto/workflows/golangci-lint/badge.svg)
-[![codecov](https://codecov.io/gh/wroge/esperanto/branch/main/graph/badge.svg?token=D2r0ktepvb)](https://codecov.io/gh/wroge/esperanto)
 [![tippin.me](https://badgen.net/badge/%E2%9A%A1%EF%B8%8Ftippin.me/@_wroge/F0918E)](https://tippin.me/@_wroge)
 [![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/wroge/esperanto.svg?style=social)](https://github.com/wroge/esperanto/tags)
 
-esperanto makes it easy to create SQL expressions for multiple dialects. 
-
-```esperanto.Compile``` compiles expressions into an SQL template and thus offers an alternative to conventional query builders.
-
-If you only need support for one SQL dialect, take a look at [wroge/superbasic](https://github.com/wroge/superbasic). To scan rows to types, i recommend [wroge/scan](https://github.com/wroge/scan).
+esperanto is a database access layer.
 
 ```go
 package main
 
 import (
+	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"github.com/wroge/esperanto"
+	"github.com/wroge/scan"
 	"github.com/wroge/superbasic"
+
+	_ "modernc.org/sqlite"
 )
 
 func main() {
-	// 1. CREATE SCHEMA
-	// Compile expressions into a template to keep the SQL code as concise as possible.
-	// Consider the differences of the individual dialects by esperanto.Switch.
+	ctx := context.Background()
 
-	create := esperanto.Compile("CREATE TABLE presidents (\n\t?\n)",
-		esperanto.Join(",\n\t",
-			esperanto.Switch{
-				esperanto.Postgres:  superbasic.SQL("nr SERIAL PRIMARY KEY"),
-				esperanto.Sqlite:    superbasic.SQL("nr INTEGER PRIMARY KEY AUTOINCREMENT"),
-				esperanto.SQLServer: superbasic.SQL("nr INT IDENTITY PRIMARY KEY"),
-			},
-			esperanto.SQL("first TEXT NOT NULL"),
-			esperanto.SQL("last TEXT NOT NULL"),
-		),
-	)
-
-	fmt.Println(create.ToSQL(esperanto.Postgres))
-	// CREATE TABLE presidents (
-	//	nr SERIAL PRIMARY KEY,
-	//	first TEXT NOT NULL,
-	//	last TEXT NOT NULL
-	// )
-
-	fmt.Println(create.ToSQL(esperanto.Sqlite))
-	// CREATE TABLE presidents (
-	//	nr INTEGER PRIMARY KEY AUTOINCREMENT,
-	//	first TEXT NOT NULL,
-	//	last TEXT NOT NULL
-	// )
-
-	fmt.Println(create.ToSQL(esperanto.SQLServer))
-	// CREATE TABLE presidents (
-	//	nr INT IDENTITY PRIMARY KEY,
-	//	first TEXT NOT NULL,
-	//	last TEXT NOT NULL
-	// )
-
-	// 2. INSERT
-	// Sometimes the syntax of each dialect is completely different, so some parts have to be skipped
-	// and others inserted in a certain place by esperanto.Switch.
-
-	insert := esperanto.Join(" ",
-		esperanto.SQL("INSERT INTO presidents (first, last)"),
-		esperanto.Switch{
-			esperanto.SQLServer: superbasic.SQL("OUTPUT INSERTED.nr"),
-		},
-		esperanto.Compile("VALUES ?",
-			esperanto.Join(", ",
-				superbasic.Map(presidents,
-					func(_ int, president President) esperanto.Expression {
-						return esperanto.Values{president.First, president.Last}
-					})...,
-			),
-		),
-		esperanto.Switch{
-			esperanto.Postgres: superbasic.SQL("RETURNING nr"),
-			esperanto.Sqlite:   superbasic.SQL("RETURNING nr"),
-		},
-	)
-
-	fmt.Println(esperanto.Finalize("$%d", esperanto.Postgres, insert))
-	// INSERT INTO presidents (first, last) VALUES ($1, $2), ($3, $4) RETURNING nr [George Washington John Adams]
-
-	fmt.Println(esperanto.Finalize("?", esperanto.Sqlite, insert))
-	// INSERT INTO presidents (first, last) VALUES (?, ?), (?, ?) RETURNING nr [George Washington John Adams]
-
-	fmt.Println(esperanto.Finalize("@p%d", esperanto.SQLServer, insert))
-	// INSERT INTO presidents (first, last) OUTPUT INSERTED.nr VALUES (@p1, @p2), (@p3, @p4) [George Washington John Adams]
-
-	// 3. QUERY
-	// In this section, we create a query that returns JSON rows.
-	// Note that the JSON_OBJECT function is not yet implemented in SQL Server 2019.
-
-	equals := esperanto.Switch{
-		esperanto.Postgres:  superbasic.SQL("last = ?", "Adams"),
-		esperanto.Sqlite:    superbasic.SQL("last = ?", "Adams"),
-		esperanto.SQLServer: superbasic.SQL("CONVERT(VARCHAR, last) = ? COLLATE Latin1_General_CS_AS", "Adams"),
+	stdDB, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(1)")
+	if err != nil {
+		panic(err)
 	}
 
-	query := esperanto.Compile("SELECT ? FROM (?) AS q",
-		esperanto.Switch{
-			esperanto.Postgres: superbasic.SQL("JSON_BUILD_OBJECT('nr', q.nr, 'first', q.first, 'last', q.last) AS result"),
-			esperanto.Sqlite:   superbasic.SQL("JSON_OBJECT('nr', q.nr, 'first', q.first, 'last', q.last) AS result"),
-			// https://docs.microsoft.com/en-us/sql/t-sql/functions/json-object-transact-sql
-			esperanto.SQLServer: superbasic.SQL("JSON_OBJECT('nr': q.nr, 'first': q.first, 'last': q.last) AS result"),
+	db := esperanto.StdDB{
+		Placeholder: "?",
+		DB:          stdDB,
+	}
+
+	err = esperanto.Exec(ctx, db, esperanto.Sqlite, DropPostAuthors, DropPosts, DropAuthors, CreateAuthors, CreatePosts, CreatePostAuthors)
+	if err != nil {
+		panic(err)
+	}
+
+	authorEntities, err := esperanto.Query(ctx, db, esperanto.Sqlite, AuthorInsert, []string{"Jim", "Tim", "Tom"})
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(authorEntities)
+	// [{1 Jim} {2 Tim} {3 Tom}]
+
+	postEntities, err := esperanto.QueryAndExec(ctx, db, esperanto.Sqlite, PostInsert, []InsertPostOptions{
+		{
+			Title:   "Post One",
+			Authors: []int64{1, 2},
 		},
-		esperanto.Join(" ",
-			esperanto.SQL("SELECT nr, first, last FROM presidents"),
-			esperanto.If(equals != nil, esperanto.Compile("WHERE ?", equals)),
+	}, PostAuthorsInsert)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(postEntities)
+	// [{1 Post One}]
+
+	postTwo, err := esperanto.QueryAndExecOne(ctx, db, esperanto.Sqlite, PostInsertOne, InsertPostOptions{
+		Title:   "Post Two",
+		Authors: []int64{2, 3},
+	}, PostAuthorsInsertOne)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(postTwo)
+	// {2 Post Two []}
+
+	authors, err := esperanto.Query(ctx, db, esperanto.Sqlite, AuthorQuery, QueryAuthorOptions{})
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(authors)
+	// [{1 Jim [{1 Post One}]} {2 Tim [{1 Post One} {2 Post Two}]} {3 Tom [{2 Post Two}]}]
+
+	posts, err := esperanto.Query(ctx, db, esperanto.Sqlite, PostQuery, QueryPostOptions{})
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(posts)
+	// [{1 Post One [{1 Jim} {2 Tim}]} {2 Post Two [{2 Tim} {3 Tom}]}]
+}
+
+type PostEntity struct {
+	ID    int64
+	Title string
+}
+
+type Post struct {
+	ID      int64
+	Title   string
+	Authors []AuthorEntity
+}
+
+type AuthorEntity struct {
+	ID   int64
+	Name string
+}
+
+type Author struct {
+	ID    int64
+	Name  string
+	Posts []PostEntity
+}
+
+type QueryAuthorOptions struct{}
+
+func DropAuthors(dialect esperanto.Dialect) superbasic.Expression {
+	return superbasic.SQL("DROP TABLE IF EXISTS authors")
+}
+
+func CreateAuthors(dialect esperanto.Dialect) superbasic.Expression {
+	return superbasic.Compile("CREATE TABLE IF NOT EXISTS authors (\n\t?\n)",
+		superbasic.Join(",\n\t",
+			superbasic.IfElse(dialect == esperanto.Postgres,
+				superbasic.SQL("id SERIAL PRIMARY KEY"),
+				superbasic.SQL("id INTEGER PRIMARY KEY AUTOINCREMENT")),
+			superbasic.SQL("name TEXT NOT NULL"),
 		),
 	)
-
-	fmt.Println(esperanto.Finalize("$%d", esperanto.Postgres, query))
-	// SELECT JSON_BUILD_OBJECT('nr', q.nr, 'first', q.first, 'last', q.last) AS result
-	// FROM (SELECT nr, first, last FROM presidents WHERE last = $1) AS q [Adams]
-
-	fmt.Println(esperanto.Finalize("?", esperanto.Sqlite, query))
-	// SELECT JSON_OBJECT('nr', q.nr, 'first', q.first, 'last', q.last) AS result
-	// FROM (SELECT nr, first, last FROM presidents WHERE last = ?) AS q [Adams]
-
-	fmt.Println(esperanto.Finalize("@p%d", esperanto.SQLServer, query))
-	// SELECT JSON_OBJECT('nr': q.nr, 'first': q.first, 'last': q.last) AS result
-	// FROM (SELECT nr, first, last FROM presidents
-	// WHERE CONVERT(VARCHAR, last) = @p1 COLLATE Latin1_General_CS_AS) AS q [Adams]
 }
 
-type President struct {
-	First string
-	Last  string
+func AuthorQuery(dialect esperanto.Dialect, options QueryAuthorOptions) (superbasic.Expression, []scan.Column[Author]) {
+	return superbasic.Compile(`
+	SELECT authors.id, authors.name, ? AS posts
+	FROM authors
+	LEFT JOIN post_authors ON post_authors.author_id = authors.id
+	LEFT JOIN posts ON posts.id = post_authors.post_id
+	GROUP BY authors.id, authors.name`,
+			superbasic.IfElse(dialect == esperanto.Postgres,
+				superbasic.SQL("JSON_AGG(JSON_BUILD_OBJECT('id', posts.id, 'title', posts.title))"),
+				superbasic.SQL(`
+			CASE WHEN posts.id IS NULL THEN '[]' 
+				ELSE JSON_GROUP_ARRAY(JSON_OBJECT('id', posts.id, 'title', posts.title)) END`)),
+		),
+		[]scan.Column[Author]{
+			scan.Any(func(author *Author, id int64) { author.ID = id }),
+			scan.Any(func(author *Author, name string) { author.Name = name }),
+			scan.AnyErr(func(author *Author, posts []byte) error { return json.Unmarshal(posts, &author.Posts) }),
+		}
 }
 
-var presidents = []President{
-	{"George", "Washington"},
-	{"John", "Adams"},
-	// {"Thomas", "Jefferson"},
-	// {"James", "Madison"},
-	// {"James", "Monroe"},
-	// {"John Quincy", "Adams"},
-	// {"Andrew", "Jackson"},
-	// {"Martin", "Van Buren"},
-	// {"William Henry", "Harrison"},
-	// {"John", "Tyler"},
-	// {"James K.", "Polk"},
-	// {"Zachary", "Taylor"},
-	// {"Millard", "Fillmore"},
-	// {"Franklin", "Pierce"},
-	// {"James", "Buchanan"},
-	// {"Abraham", "Lincoln"},
-	// {"Andrew", "Johnson"},
-	// {"Ulysses S.", "Grant"},
-	// {"Rutherford B.", "Hayes"},
-	// {"James A.", "Garfield"},
-	// {"Chester A.", "Arthur"},
-	// {"Grover", "Cleveland"},
-	// {"Benjamin", "Harrison"},
-	// {"Grover", "Cleveland"},
-	// {"William", "McKinley"},
-	// {"Theodore", "Roosevelt"},
-	// {"William Howard", "Taft"},
-	// {"Woodrow", "Wilson"},
-	// {"Warren G.", "Harding"},
-	// {"Calvin", "Coolidge"},
-	// {"Herbert", "Hoover"},
-	// {"Franklin D.", "Roosevelt"},
-	// {"Harry S.", "Truman"},
-	// {"Dwight D.", "Eisenhower"},
-	// {"John F.", "Kennedy"},
-	// {"Lyndon B.", "Johnson"},
-	// {"Richard", "Nixon"},
-	// {"Gerald", "Ford"},
-	// {"Jimmy", "Carter"},
-	// {"Ronald", "Reagan"},
-	// {"George H. W.", "Bush"},
-	// {"Bill", "Clinton"},
-	// {"George W.", "Bush"},
-	// {"Barack", "Obama"},
-	// {"Donald", "Trump"},
-	// {"Joe", "Biden"},
+func AuthorInsert(dialect esperanto.Dialect, names []string) (superbasic.Expression, []scan.Column[AuthorEntity]) {
+	return superbasic.Compile("INSERT INTO authors (name) VALUES ? RETURNING id, name", superbasic.Join(", ", superbasic.Map(names, func(_ int, name string) superbasic.Expression {
+			return superbasic.Values{name}
+		})...)),
+		[]scan.Column[AuthorEntity]{
+			scan.Any(func(author *AuthorEntity, id int64) { author.ID = id }),
+			scan.Any(func(author *AuthorEntity, name string) { author.Name = name }),
+		}
+}
+
+func AuthorInsertOne(dialect esperanto.Dialect, name string) (superbasic.Expression, []scan.Column[AuthorEntity]) {
+	return superbasic.SQL("INSERT INTO authors (name) VALUES (?) RETURNING id, name", name),
+		[]scan.Column[AuthorEntity]{
+			scan.Any(func(author *AuthorEntity, id int64) { author.ID = id }),
+			scan.Any(func(author *AuthorEntity, name string) { author.Name = name }),
+		}
+}
+
+func DropPosts(dialect esperanto.Dialect) superbasic.Expression {
+	return superbasic.SQL("DROP TABLE IF EXISTS posts")
+}
+
+func DropPostAuthors(dialect esperanto.Dialect) superbasic.Expression {
+	return superbasic.SQL("DROP TABLE IF EXISTS post_authors")
+}
+
+func CreatePosts(dialect esperanto.Dialect) superbasic.Expression {
+	return superbasic.Compile("CREATE TABLE IF NOT EXISTS posts (\n\t?\n)",
+		superbasic.Join(",\n\t",
+			superbasic.IfElse(dialect == esperanto.Postgres,
+				superbasic.SQL("id SERIAL PRIMARY KEY"),
+				superbasic.SQL("id INTEGER PRIMARY KEY AUTOINCREMENT")),
+			superbasic.SQL("title TEXT NOT NULL"),
+		),
+	)
+}
+
+func CreatePostAuthors(dialect esperanto.Dialect) superbasic.Expression {
+	return superbasic.Compile("CREATE TABLE IF NOT EXISTS post_authors (\n\t?\n)",
+		superbasic.Join(",\n\t",
+			superbasic.SQL("post_id INTEGER REFERENCES posts (id) ON DELETE CASCADE"),
+			superbasic.SQL("author_id INTEGER REFERENCES authors (id) ON DELETE RESTRICT"),
+			superbasic.SQL("PRIMARY KEY (post_id, author_id)"),
+		),
+	)
+}
+
+type QueryPostOptions struct{}
+
+func PostQuery(dialect esperanto.Dialect, options QueryPostOptions) (superbasic.Expression, []scan.Column[Post]) {
+	return superbasic.Compile(`
+	SELECT posts.id, posts.title, ? AS authors
+	FROM posts
+	LEFT JOIN post_authors ON post_authors.post_id = posts.id
+	LEFT JOIN authors ON authors.id = post_authors.author_id
+	GROUP BY posts.id, posts.title`,
+			superbasic.IfElse(dialect == esperanto.Postgres,
+				superbasic.SQL("JSON_AGG(JSON_BUILD_OBJECT('id', authors.id, 'name', authors.name))"),
+				superbasic.SQL(`CASE WHEN authors.id IS NULL THEN '[]' 
+				ELSE JSON_GROUP_ARRAY(JSON_OBJECT('id', authors.id, 'name', authors.name)) END`)),
+		),
+		[]scan.Column[Post]{
+			scan.Any(func(post *Post, id int64) { post.ID = id }),
+			scan.Any(func(post *Post, title string) { post.Title = title }),
+			scan.AnyErr(func(post *Post, authors []byte) error { return json.Unmarshal(authors, &post.Authors) }),
+		}
+}
+
+type InsertPostOptions struct {
+	Title   string
+	Authors []int64
+}
+
+func PostInsert(dialect esperanto.Dialect, options []InsertPostOptions) (superbasic.Expression, []scan.Column[PostEntity]) {
+	return superbasic.Compile("INSERT INTO posts (title) VALUES ? RETURNING id, title", superbasic.Join(", ", superbasic.Map(options, func(_ int, option InsertPostOptions) superbasic.Expression {
+			return superbasic.Values{option.Title}
+		})...)),
+		[]scan.Column[PostEntity]{
+			scan.Any(func(post *PostEntity, id int64) { post.ID = id }),
+			scan.Any(func(post *PostEntity, title string) { post.Title = title }),
+		}
+}
+
+func PostAuthorsInsert(dialect esperanto.Dialect, options []InsertPostOptions, entities []PostEntity) superbasic.Expression {
+	return superbasic.Compile("INSERT INTO post_authors (post_id, author_id) VALUES ?",
+		superbasic.Join(", ", superbasic.Map(entities, func(index int, entity PostEntity) superbasic.Expression {
+			return superbasic.Join(", ", superbasic.Map(options[index].Authors, func(_ int, author int64) superbasic.Expression {
+				return superbasic.Values{entity.ID, author}
+			})...)
+		})...),
+	)
+}
+
+func PostInsertOne(dialect esperanto.Dialect, options InsertPostOptions) (superbasic.Expression, []scan.Column[Post]) {
+	return superbasic.SQL("INSERT INTO posts (title) VALUES (?) RETURNING id, title", options.Title),
+		[]scan.Column[Post]{
+			scan.Any(func(post *Post, id int64) { post.ID = id }),
+			scan.Any(func(post *Post, title string) { post.Title = title }),
+		}
+}
+
+func PostAuthorsInsertOne(dialect esperanto.Dialect, insert InsertPostOptions, post Post) superbasic.Expression {
+	return superbasic.Compile("INSERT INTO post_authors (post_id, author_id) VALUES ?",
+		superbasic.Join(", ", superbasic.Map(insert.Authors, func(_ int, author int64) superbasic.Expression {
+			return superbasic.Values{post.ID, author}
+		})...),
+	)
 }
 ```
