@@ -6,7 +6,10 @@
 [![tippin.me](https://badgen.net/badge/%E2%9A%A1%EF%B8%8Ftippin.me/@_wroge/F0918E)](https://tippin.me/@_wroge)
 [![GitHub tag (latest SemVer)](https://img.shields.io/github/tag/wroge/esperanto.svg?style=social)](https://github.com/wroge/esperanto/tags)
 
-esperanto is a database access layer.
+esperanto is a database access layer. It is based upon ...
+
+- [wroge/superbasic](https://github.com/wroge/superbasic)
+- [wroge/scan](https://github.com/wroge/scan)
 
 ```go
 package main
