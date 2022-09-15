@@ -76,7 +76,7 @@ func TestInsert(t *testing.T) {
 					{"George", "Washington"},
 					{"John", "Adams"},
 				},
-					func(president President) esperanto.Expression {
+					func(_ int, president President) esperanto.Expression {
 						return esperanto.Values{president.First, president.Last}
 					})...,
 			),

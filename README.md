@@ -64,7 +64,6 @@ func main() {
 	// 2. INSERT
 	// Sometimes the syntax of each dialect is completely different, so some parts have to be skipped
 	// and others inserted in a certain place by esperanto.Switch.
-	// Map is a generic map function, that will be removed until better alternatives are available.
 
 	insert := esperanto.Join(" ",
 		esperanto.SQL("INSERT INTO presidents (first, last)"),
@@ -74,7 +73,7 @@ func main() {
 		esperanto.Compile("VALUES ?",
 			esperanto.Join(", ",
 				superbasic.Map(presidents,
-					func(president President) esperanto.Expression {
+					func(_ int, president President) esperanto.Expression {
 						return esperanto.Values{president.First, president.Last}
 					})...,
 			),
